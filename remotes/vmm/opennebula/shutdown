@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+
+$: << File.dirname(__FILE__)
+
+require 'one_bursting_driver'
+
+deploy_id = ARGV[0]
+host      = ARGV[1]
+
+one_drv = ONEBurstingDriver.new(host)
+
+one_drv.shutdown(deploy_id)
