@@ -25,17 +25,19 @@ require 'nokogiri'
 require 'occi-api'
 require 'uri'
 
+#OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+
 class ONEBurstingDriver
-    # Constructor, loads credentials and endpoint
+	# Constructor, loads credentials and endpoint
     def initialize(hostname)
         @hostname = hostname
 
         public_cloud_one_conf  = YAML::load(File.read(ONE_BURSTING_DRIVER_CONF))
 
-        @instance_types = public_cloud_one_conf['instance_types']
-        @localhost = public_cloud_one_conf['localhost']
-        @host = public_cloud_one_conf['host']
-        @rocci_settings = public_cloud_one_conf['rocci_endpoint']
+        @instance_types = public_cloud_one_conf[hostname]['instance_types']
+        @localhost = public_cloud_one_conf[hostname]['localhost']
+        @host = public_cloud_one_conf[hostname]['host']
+        @rocci_settings = public_cloud_one_conf[hostname]['rocci_endpoint']
         #sanitize data
         raise "hostname not defined for #{rocci_settings}" if @rocci_settings['hostname'].nil?
         raise "type not defined for #{rocci_settings}" if @rocci_settings['type'].nil?
@@ -55,6 +57,7 @@ class ONEBurstingDriver
         raise "host_mon not defined for #{host}" if @host['host_mon'].nil?
 
         @local_client = XMLRPC::Client.new(@localhost['hostname'], @localhost['rpc_path'], @localhost['port'])
+
         connection_args = {
               :host => @host['hostname'],
               :port => @host['port'],
@@ -62,6 +65,7 @@ class ONEBurstingDriver
               :path => @host['rpc_path']
             }
         @client = XMLRPC::Client.new_from_hash(connection_args)
+
         @local_credentials = "#{@localhost['username']}:#{@localhost['password']}"
         @credentials = "#{@host['username']}:#{@host['password']}"
 
@@ -70,7 +74,7 @@ class ONEBurstingDriver
           :auth => {
             :type       => @rocci_settings['type'],
             :username   => @rocci_settings['username'],
-            :password   => @rocci_settings['password']
+            :password   => @rocci_settings['password'],
           },
           :log => {
             :out        => STDERR,
