@@ -304,36 +304,30 @@ class ONEBurstingDriver
     end
 
     def cancel(deploy_id)
-        id = get_remote_id(deploy_id)
-        @rocci_client.delete "https://#{@rocci_settings['hostname']}:#{@rocci_settings['port']}/compute/#{id}"
+        @rocci_client.delete "/compute/#{deploy_id}"
     end
 
     def reboot(deploy_id)
-        id = get_remote_id(deploy_id)
         startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='restart', title='restart compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "https://#{@rocci_settings['hostname']}:#{@rocci_settings['port']}/compute/#{id}", startactioninstance
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
     end
 
     def shutdown(deploy_id)
-       # cancel(deploy_id)
-        id = get_remote_id(deploy_id)
         startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='stop', title='stop compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "https://#{@rocci_settings['hostname']}:#{@rocci_settings['port']}/compute/#{id}", startactioninstance 
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance 
     end
 
     def save(deploy_id)
-        id = get_remote_id(deploy_id)
         startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='stop', title='stop compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "https://#{@rocci_settings['hostname']}:#{@rocci_settings['port']}/compute/#{id}", startactioninstance      
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance      
     end
 
     def restore(deploy_id)
-        id = get_remote_id(deploy_id)
         startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='start', title='restart compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "https://#{@rocci_settings['hostname']}:#{@rocci_settings['port']}/compute/#{id}", startactioninstance
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
     end
 end
