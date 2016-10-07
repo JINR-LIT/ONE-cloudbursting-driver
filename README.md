@@ -101,3 +101,35 @@ PUBLIC_CLOUD=[
 ```
 
 In case PROVIDER_TEMPLATE_IDs have different names in different external clouds, then also add a SCHED_REQUIREMENTS parameter to specify the particular cloud you want to run this template on. 
+
+To test OCCI connection and to get the list of available resources you can use the following simple script:
+```
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'net/http'
+require 'occi-api'
+require 'pp'
+require 'openssl'
+
+OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+
+client = Occi::Api::Client::ClientHttp.new({
+  :endpoint => "https://hostname:11443/",
+  :auth => {
+    :type               => "basic",
+    :username          => "name",
+    :password => "pass" },
+  :log => {
+    :out   => STDERR,
+    :level => Occi::Api::Log::ERROR
+  }
+})
+
+puts "\n\nListing all available mixins:" 
+client.list_mixins.each do |mixin|
+  puts "\n#{mixin}" 
+end
+```
+
+In case of using https connection comment/Uncomment the line `OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE` to test if there is some problem with the certificate.
