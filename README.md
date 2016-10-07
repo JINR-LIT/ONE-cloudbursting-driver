@@ -6,7 +6,7 @@ As an example let's assume you have an OpenNebula cloud (to which we will refer 
 
 ## Prerequisites
 
-1. [OCCI-Cli]() must be installed on one-owned
+1. [OCCI-Cli](https://github.com/gwdg/rOCCI-cli) must be installed on one-owned
 2. Both, one-ext-1 and one-ext-2, must provide occi-interface. On how to set it up on one-ext consult [rOCCI-server](https://github.com/gwdg/rOCCI-server#development) github repository.
 
 ## Installation
