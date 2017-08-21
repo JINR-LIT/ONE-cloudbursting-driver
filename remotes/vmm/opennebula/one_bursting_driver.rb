@@ -1,18 +1,20 @@
-#!/usr/bin/env ruby 
+#!/usr/bin/env ruby
 
-ONE_LOCATION = ENV["ONE_LOCATION"] if !defined?(ONE_LOCATION)
+ONE_LOCATION = ENV["ONE_LOCATION"] unless defined?(ONE_LOCATION)
 
 if !ONE_LOCATION
-    RUBY_LIB_LOCATION = "/usr/lib/one/ruby" if !defined?(RUBY_LIB_LOCATION)
-    ETC_LOCATION      = "/etc/one/" if !defined?(ETC_LOCATION)
+    RUBY_LIB_LOCATION = "/usr/lib/one/ruby" unless defined?(RUBY_LIB_LOCATION)
+    ETC_LOCATION = "/etc/one/" unless defined?(ETC_LOCATION)
 else
-    RUBY_LIB_LOCATION = ONE_LOCATION + "/lib/ruby" if !defined?(RUBY_LIB_LOCATION)
-    ETC_LOCATION      = ONE_LOCATION + "/etc/" if !defined?(ETC_LOCATION)
+    RUBY_LIB_LOCATION = ONE_LOCATION + "/lib/ruby" unless defined?(RUBY_LIB_LOCATION)
+    ETC_LOCATION = ONE_LOCATION + "/etc/" unless defined?(ETC_LOCATION)
 end
 
 $: << RUBY_LIB_LOCATION
-
 ONE_BURSTING_DRIVER_CONF = "#{ETC_LOCATION}/one_bursting_driver.conf"
+
+VM_STATE = { runn: 'a', poff: 'p', fail: 'e', susp: 'd', default: '-' }
+
 
 require 'rubygems'
 require 'yaml'
@@ -57,7 +59,6 @@ class ONEBurstingDriver
         raise "host_mon not defined for #{host}" if @host['host_mon'].nil?
 
         @local_client = XMLRPC::Client.new(@localhost['hostname'], @localhost['rpc_path'], @localhost['port'])
-
         connection_args = {
               :host => @host['hostname'],
               :port => @host['port'],
@@ -82,7 +83,6 @@ class ONEBurstingDriver
           }
         })
     end
-
     #
     # Returns quotas on remote OpenNebula instance
     #
@@ -90,12 +90,8 @@ class ONEBurstingDriver
     def get_remote_quotas
         begin
             response = @client.call("one.user.info",@credentials, -1)
-        rescue XMLRPC::FaultException => e
-            puts "Error:"
-            puts e.faultCode
-            puts e.faultString
-            exit -1
-        end   
+            xmlrpc_fault_exception
+        end
 
         doc = Nokogiri::XML.parse(response[1])
 
@@ -105,7 +101,7 @@ class ONEBurstingDriver
         memory_used = doc.xpath("//VM_QUOTA//MEMORY_USED").text
 
         # These could be used for fixed and instance-based monitoring modes. Leaving them for possible future usage
-        
+
         cpu = cpu.to_i * 100
         cpu_used = cpu_used.to_i * 100
         memory = memory.to_i * 1024
@@ -119,59 +115,49 @@ class ONEBurstingDriver
         # quotas << "USEDCPU=#{cpu_used}\n"
         # quotas << "FREEMEMORY=#{(memory - memory_used)}\n"
         # quotas << "FREECPU=#{cpu - cpu_used}\n"
-
-        return quotas
     end
 
     def state_to_string(state)
-        if state.to_i == 3
-            return "a"
-        else
-            return "-"
+        case state.to_i
+            when 3
+              VM_STATE[:runn]
+            when 5
+              VM_STATE[:poff]
+            when 7
+              VM_STATE[:fail]
+            when 8
+              VM_STATE[:susp]
+            else
+              VM_STATE[:default]
         end
     end
 
     def get_local_id(remote_id)
         begin
             response = @local_client.call("one.vmpool.info", @local_credentials, -3, -1, -1, -1)
-        rescue XMLRPC::FaultException => e
-            puts "Error:"
-            puts e.faultCode
-            puts e.faultString
-            exit -1
-        end   
+            xmlrpc_fault_exception
+        end
         doc = Nokogiri::XML.parse(response[1])
         id = doc.xpath("//VM[DEPLOY_ID='#{remote_id}']/ID").text
-        if id.to_s == ''
-            return -1
-        else
-            return id
-        end 
+        id.to_s.empty? ? -1 : id
     end
 
-    def get_remote_id(local_id)     
+    def get_remote_id(local_id)
         begin
             response = @local_client.call("one.vm.info", @local_credentials, local_id.to_i)
-        rescue XMLRPC::FaultException => e
-            puts "Error:"
-            puts e.faultCode
-            puts e.faultString
-            exit -1
-        end 
+            xmlrpc_fault_exception
+        end
 
         doc = Nokogiri::XML.parse(response[1])
-        return doc.xpath("//VM/DEPLOY_ID").text
+        doc.xpath("//VM/DEPLOY_ID").text
     end
 
     def get_all_vms_poll_info
         begin
             response = @client.call("one.vmpool.info", @credentials, -3, -1, -1, -1)
-        rescue XMLRPC::FaultException => e
-            puts "Error:"
-            puts e.faultCode
-            puts e.faultString
-            exit -1
-        end   
+            xmlrpc_fault_exception
+        end
+
         doc = Nokogiri::XML.parse(response[1])
         vms = doc.xpath("//VM//ID")
         vms_info = "VM_POLL=YES\n"
@@ -181,9 +167,10 @@ class ONEBurstingDriver
         total_memory_used = 0
         vms.each do |vm|
             state = doc.xpath("//VM[ID='#{vm.text}']/STATE").text
-            if state.to_i == 3
+
+            if vm_deployed?(doc, vm)
                 local_id = get_local_id(doc.xpath("//VM[ID='#{vm.text}']/ID").text)
-                vms_info << "VM=[\n"
+		            vms_info << "VM=[\n"
                 vms_info << "  ID=#{local_id || -1},\n"
                 vms_info << "  DEPLOY_ID=#{doc.xpath("//VM[ID='#{vm.text}']/DEPLOY_ID").text},\n"
                 used_cpu = doc.xpath("//VM[ID='#{vm.text}']/CPU").text
@@ -201,12 +188,16 @@ class ONEBurstingDriver
         end
         consumption = "USEDMEMORY=#{total_memory_used}\n"
         consumption << "USEDCPU=#{total_cpu_used}\n"
-        return consumption << vms_info
+        consumption << vms_info
+    end
+
+    def vm_deployed?(doc, vm)
+        doc.xpath("//VM[ID='#{vm.text}']/DEPLOY_ID").text != ''
     end
 
     #
     # Get the info of all hosts and remote instances.
-    # 
+    #
     def monitor_hosts_and_vms
         totalmemory = 0
         totalcpu = 0
@@ -215,8 +206,7 @@ class ONEBurstingDriver
         host_info << "PUBLIC_CLOUD=YES\n"
         host_info << "PRIORITY=-1\n"
         host_info << "CPUSPEED=1000\n"
-        host_info << "HOSTNAME=\"#{@host['hostname']}\"\n" 
-
+        host_info << "HOSTNAME=\"#{@host['hostname']}\"\n"
         case @host['host_mon']['type']
         when 'fixed'
             host_info << "TOTALMEMORY=#{@host['host_mon']['memory']}\n"
@@ -224,7 +214,6 @@ class ONEBurstingDriver
         when 'instance_based'
             @host['capacity'].each { |name, size|
                 cpu, mem = instance_type_capacity(name)
-
                 totalmemory += mem * size.to_i
                 totalcpu    += cpu * size.to_i
             }
@@ -236,9 +225,8 @@ class ONEBurstingDriver
 
         usedcpu    = 0
         usedmemory = 0
-        
-        vms_info = get_all_vms_poll_info
 
+        vms_info = get_all_vms_poll_info
         puts host_info
         puts vms_info
     end
@@ -257,12 +245,8 @@ class ONEBurstingDriver
 
         begin
             response = @client.call("one.vm.info", @credentials, deploy_id.to_i)
-        rescue XMLRPC::FaultException => e
-            puts "Error:"
-            puts e.faultCode
-            puts e.faultString
-            exit -1
-        end   
+            xmlrpc_fault_exception
+        end
 
         doc = Nokogiri::XML.parse(response[1])
 
@@ -278,14 +262,12 @@ class ONEBurstingDriver
         ip = doc.xpath("//VM//TEMPLATE//NIC//IP").text
         poll_string = "USEDCPU=#{used_cpu.to_f} NETTX=#{nettx} NETRX=#{netrx} NAME=#{name} USEDMEMORY=#{memory} STATE=#{state} GUEST_IP=#{ip}"
         vm_info << "  POLL=\"#{poll_string}\" ]\n"
-
-        return vm_info
     end
 
     #
     # VM-management actions
     #
-    
+
     def deploy(deploy_id, host, xml_text)
         id = get_remote_id(deploy_id)
         if id != ""
@@ -293,11 +275,12 @@ class ONEBurstingDriver
         else
             doc = Nokogiri::XML.parse(xml_text)
 
-            cmpt = @rocci_client.get_resource "compute"
-            cmpt.mixins << @rocci_client.get_mixin(doc.xpath("//VM/USER_TEMPLATE/PUBLIC_CLOUD/PROVIDER_TEMPLATE_ID").text, "os_tpl")
-            # cmpt.mixins << @rocci_client.get_mixin(doc.xpath("//VM/USER_TEMPLATE/PUBLIC_CLOUD/SIZE").text, "resource_tpl")
-            cmpt.title = doc.xpath("//VM/NAME").text
+            pre_deployment_check(doc)
 
+            cmpt = @rocci_client.get_resource "compute"
+	          cmpt.mixins << @rocci_client.get_mixin(doc.xpath("//VM/USER_TEMPLATE/PUBLIC_CLOUD/PROVIDER_TEMPLATE_ID").text, "os_tpl")
+            #cmpt.mixins << @rocci_client.get_mixin(doc.xpath("//VM/USER_TEMPLATE/PUBLIC_CLOUD/SIZE").text, "resource_tpl")
+            cmpt.title = doc.xpath("//VM/NAME").text
             cmpt_loc = @rocci_client.create cmpt
             puts(URI(cmpt_loc).path.split('/').last)
         end
@@ -308,26 +291,132 @@ class ONEBurstingDriver
     end
 
     def reboot(deploy_id)
-        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='restart', title='restart compute instance'
+        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#',
+                                             term='restart', title='restart compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
+	      @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
     end
 
     def shutdown(deploy_id)
-        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='stop', title='stop compute instance'
+        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#',
+                                             term='stop', title='stop compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance 
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
     end
 
     def save(deploy_id)
-        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='stop', title='stop compute instance'
+        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#',
+                                             term='stop', title='stop compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance      
+        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
     end
 
     def restore(deploy_id)
-        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#', term='start', title='restart compute instance'
+        startaction = Occi::Core::Action.new scheme='http://schemas.ogf.org/occi/infrastructure/compute/action#',
+                                             term='start', title='restart compute instance'
         startactioninstance = Occi::Core::ActionInstance.new startaction, nil
-        @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
+	      @rocci_client.trigger "/compute/#{deploy_id}", startactioninstance
+    end
+
+    def pre_deployment_check(doc)
+        remote_template = doc.xpath("//VM/USER_TEMPLATE/PUBLIC_CLOUD/PROVIDER_TEMPLATE_ID").text
+        find_remote_template(remote_template)
+
+        remote_template_index = remote_template[remote_template.rindex(/_/)+1..remote_template.size-1].to_i
+        template_info_doc = get_remote_template_doc(remote_template_index)
+        current_user_info_doc = get_current_user_doc
+        check_remote_template_user(current_user_info_doc, remote_template_index, template_info_doc)
+        check_remote_template_doc(current_user_info_doc, remote_template_index, template_info_doc)
+
+        template_info_image_id = template_info_doc.xpath("///IMAGE_ID").text.to_i
+        remote_image_info_doc = get_remote_image_doc(template_info_image_id)
+
+        remote_image_datastore_id = (remote_image_info_doc.xpath("//DATASTORE_ID").text).to_i
+        remote_image_datastore_info_doc = get_remote_image_datastore_doc(remote_image_datastore_id)
+        remote_image_datastore_info_tm_mad = remote_image_datastore_info_doc.xpath("//TEMPLATE/TM_MAD").text
+        check_remote_image_datastore_tm_mad(remote_image_datastore_info_tm_mad)
+    end
+
+    def check_remote_image_datastore_tm_mad(remote_image_datastore_info_tm_mad)
+        raise "TM_MAD on the remote image datastore must be ssh!" unless remote_image_datastore_info_tm_mad == 'ssh'
+    end
+
+    def get_remote_image_datastore_doc(remote_image_datastore_id)
+        begin
+            remote_image_datastore_info_result_flag = true
+            remote_image_datastore_info_output_string = ''
+            remote_image_datastore_info_error_code = 1
+            remote_image_datastore_info = @client.call("one.datastore.info", @credentials,
+                                                       remote_image_datastore_id,
+                                                       remote_image_datastore_info_result_flag,
+                                                       remote_image_datastore_info_output_string,
+                                                       remote_image_datastore_info_error_code)
+            xmlrpc_fault_exception
+        end
+        Nokogiri::XML.parse(remote_image_datastore_info[1])
+    end
+
+    def get_remote_image_doc(template_info_image_id)
+        begin
+            remote_image_info_result_flag = true
+            remote_image_info_output_string = ''
+            remote_image_info_error_code = 1
+            remote_image_info = @client.call("one.image.info", @credentials, template_info_image_id,
+                                             remote_image_info_result_flag, remote_image_info_output_string,
+                                             remote_image_info_error_code)
+            xmlrpc_fault_exception
+        end
+        Nokogiri::XML.parse(remote_image_info[1])
+    end
+
+    def find_remote_template(remote_template)
+        unless @rocci_client.list_mixins.include? @rocci_client.get_mixin(remote_template, "os_tpl")
+            raise "Template #{@rocci_client.get_mixin(remote_template, "os_tpl")} is not found in the external cloud! Template does not exist or remote template owner/group are incorrect"
+        end
+    end
+
+    def check_remote_template_doc(current_user_info_doc, remote_template_index, template_info_doc)
+        template_info_group_name = template_info_doc.xpath("//GNAME[//ID='#{remote_template_index}']").text
+        current_user_info_group_name = current_user_info_doc.xpath("//GNAME").text
+        raise "Invalid group name in the remote template" unless template_info_group_name == current_user_info_group_name
+    end
+
+    def check_remote_template_user(current_user_info_doc, remote_template_index, template_info_doc)
+        template_info_user_name = template_info_doc.xpath("//UNAME[//ID='#{remote_template_index}']").text
+        current_user_info_user_name = current_user_info_doc.xpath("//NAME").text
+        raise "Invalid user name in the remote template" unless template_info_user_name == current_user_info_user_name
+    end
+
+    def get_current_user_doc
+        begin
+            current_user_info_result_flag = true
+            current_user_info_output_string = ''
+            current_user_info_error_code = 1
+            current_user_info = @client.call("one.user.info", @credentials, -1, current_user_info_result_flag,
+                                             current_user_info_output_string, current_user_info_error_code)
+            xmlrpc_fault_exception
+        end
+        Nokogiri::XML.parse(current_user_info[1])
+    end
+
+    def get_remote_template_doc(remote_template_index)
+        begin
+            template_info_result_flag = true
+            template_info_output_string = ''
+            template_info_error_code = 1
+            template_info = @client.call("one.template.info", @credentials, remote_template_index,
+                                         true, template_info_result_flag, template_info_output_string,
+                                         template_info_error_code)
+            xmlrpc_fault_exception
+        end
+        Nokogiri::XML.parse(template_info[1])
+    end
+
+    def xmlrpc_fault_exception
+    rescue XMLRPC::FaultException => e
+        puts "Error:"
+        puts e.faultCode
+        puts e.faultString
+        exit -1
     end
 end
