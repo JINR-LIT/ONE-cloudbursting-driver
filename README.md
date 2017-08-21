@@ -11,7 +11,7 @@ As an example let's assume you have an OpenNebula cloud (to which we will refer 
 
 ## Installation
 
-To install the driver run `install.sh`. This script just copies all the necessary files to proper locations and sets file permissions. 
+To install the driver run `install.sh`. This script just copies all the necessary files to proper locations and sets file permissions.
 
 ## Configuration
 
@@ -86,8 +86,8 @@ ONE-EXT-2:
 
 Next, add the external clouds as hosts into one-owned cloud, for example with CLI:
 ```
-onehost create ONE-EXT-1 –im im_opennebula --vmm vmm_opennebula --net dummy
-onehost create ONE-EXT-2 –im im_opennebula --vmm vmm_opennebula --net dummy
+onehost create ONE-EXT-1 --im im_opennebula --vm vmm_opennebula --net dummy
+onehost create ONE-EXT-2 --im im_opennebula --vm vmm_opennebula --net dummy
 ```
 
 ## Usage
@@ -96,11 +96,11 @@ In your one-owned cloud prepare a VM template as usual adding a PUBLIC_CLOUD sec
 ```
 PUBLIC_CLOUD=[
     PROVIDER_TEMPLATE_ID="uuid_example_template",
-    TYPE="opennebula" 
+    TYPE="opennebula"
 ]
 ```
 
-In case PROVIDER_TEMPLATE_IDs have different names in different external clouds, then also add a SCHED_REQUIREMENTS parameter to specify the particular cloud you want to run this template on. 
+In case PROVIDER_TEMPLATE_IDs have different names in different external clouds, then also add a SCHED_REQUIREMENTS parameter to specify the particular cloud you want to run this template on.
 
 To test OCCI connection and to get the list of available resources you can use the following simple script:
 ```
@@ -126,9 +126,9 @@ client = Occi::Api::Client::ClientHttp.new({
   }
 })
 
-puts "\n\nListing all available mixins:" 
+puts "\n\nListing all available mixins:"
 client.list_mixins.each do |mixin|
-  puts "\n#{mixin}" 
+  puts "\n#{mixin}"
 end
 ```
 
