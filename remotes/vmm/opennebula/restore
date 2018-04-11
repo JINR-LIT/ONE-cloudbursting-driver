@@ -4,9 +4,9 @@ $: << File.dirname(__FILE__)
 
 require 'one_bursting_driver'
 
-deploy_id = ARGV[0]
-file      = ARGV[1]
-host      = ARGV[2]
+deploy_id = ARGV[2]
+file      = ARGV[0]
+host      = ARGV[1]
 
 one_drv = ONEBurstingDriver.new(host)
 
